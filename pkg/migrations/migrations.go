@@ -186,6 +186,17 @@ func MigrateTrafficResetDayFromTags(db *gorm.DB) error {
 	return nil
 }
 
+// BackfillFirstAgentReportedAt prevents existing clients from being treated as
+// newly reporting clients after the column is introduced.
+func BackfillFirstAgentReportedAt(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("migration database is nil")
+	}
+	return db.Model(&models.Client{}).
+		Where("first_agent_reported_at IS NULL AND created_at IS NOT NULL").
+		Update("first_agent_reported_at", gorm.Expr("created_at")).Error
+}
+
 func hasLegacyConfigTable(db *gorm.DB) bool {
 	if !db.Migrator().HasTable("configs") {
 		return false

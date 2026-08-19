@@ -783,6 +783,9 @@ func doInitialize() error {
 	default:
 		return fmt.Errorf("unsupported database type: %s (supported: %s)", flags.DatabaseType, flags.SupportedDatabaseTypes())
 	}
+	backfillFirstAgentReportTimes := (instance.Migrator().HasTable("clients") &&
+		!instance.Migrator().HasColumn("clients", "first_agent_reported_at")) ||
+		instance.Migrator().HasTable("client_infos")
 	if err := migrations.Run(migrations.Context{DB: instance}); err != nil {
 		return fmt.Errorf("failed to run startup migrations: %w", err)
 	}
@@ -827,6 +830,11 @@ func doInitialize() error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tables: %w", err)
+	}
+	if backfillFirstAgentReportTimes {
+		if err := migrations.BackfillFirstAgentReportedAt(instance); err != nil {
+			return fmt.Errorf("failed to backfill first agent report times: %w", err)
+		}
 	}
 	if copyLegacyReturnRouteNotify {
 		if err := instance.Exec("UPDATE return_route_tasks SET notify_recovery = notify").Error; err != nil {

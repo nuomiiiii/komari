@@ -53,6 +53,124 @@ func TestNewClientDefaultsTrafficLimitTypeToSum(t *testing.T) {
 	assert.Equal(t, now, client.UpdatedAt)
 }
 
+func TestSaveClientInfoSetsDefaultExpirationOnFirstReport(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:first-report-default-expiration?mode=memory&cache=shared"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.Client{}))
+	require.NoError(t, db.Create(&models.Client{UUID: "client-new", Token: "token-new"}).Error)
+
+	now := time.Date(2028, time.January, 31, 12, 30, 0, 0, time.UTC)
+	require.NoError(t, saveClientInfoAt(db, map[string]interface{}{
+		"uuid":    "client-new",
+		"version": "2.2.3",
+	}, now))
+
+	var client models.Client
+	require.NoError(t, db.First(&client, "uuid = ?", "client-new").Error)
+	require.NotNil(t, client.FirstAgentReportedAt)
+	assert.Equal(t, now, client.FirstAgentReportedAt.UTC())
+	require.NotNil(t, client.ExpiredAt)
+	assert.Equal(t, time.Date(2028, time.February, 29, 12, 30, 0, 0, time.UTC), client.ExpiredAt.UTC())
+}
+
+func TestSaveClientInfoPreservesConfiguredExpiration(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:first-report-configured-expiration?mode=memory&cache=shared"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.Client{}))
+	configured := time.Date(2029, time.June, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&models.Client{
+		UUID: "client-configured", Token: "token-configured", ExpiredAt: &configured,
+	}).Error)
+
+	now := time.Date(2028, time.January, 31, 12, 30, 0, 0, time.UTC)
+	require.NoError(t, saveClientInfoAt(db, map[string]interface{}{
+		"uuid":    "client-configured",
+		"version": "2.2.3",
+	}, now))
+
+	var client models.Client
+	require.NoError(t, db.First(&client, "uuid = ?", "client-configured").Error)
+	require.NotNil(t, client.FirstAgentReportedAt)
+	assert.Equal(t, now, client.FirstAgentReportedAt.UTC())
+	require.NotNil(t, client.ExpiredAt)
+	assert.Equal(t, configured, client.ExpiredAt.UTC())
+}
+
+func TestSaveClientInfoDoesNotRestoreClearedExpirationAfterFirstReport(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:later-report-cleared-expiration?mode=memory&cache=shared"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&models.Client{}))
+	firstReport := time.Date(2028, time.January, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&models.Client{
+		UUID: "client-cleared", Token: "token-cleared", FirstAgentReportedAt: &firstReport,
+	}).Error)
+
+	require.NoError(t, saveClientInfoAt(db, map[string]interface{}{
+		"uuid":    "client-cleared",
+		"version": "2.2.4",
+	}, firstReport.AddDate(0, 1, 0)))
+
+	var client models.Client
+	require.NoError(t, db.First(&client, "uuid = ?", "client-cleared").Error)
+	assert.Nil(t, client.ExpiredAt)
+	require.NotNil(t, client.FirstAgentReportedAt)
+	assert.Equal(t, firstReport, client.FirstAgentReportedAt.UTC())
+}
+
+func TestNextNaturalMonth(t *testing.T) {
+	tests := []struct {
+		name string
+		from time.Time
+		want time.Time
+	}{
+		{
+			name: "same day",
+			from: time.Date(2026, time.April, 18, 20, 10, 11, 12, time.UTC),
+			want: time.Date(2026, time.May, 18, 20, 10, 11, 12, time.UTC),
+		},
+		{
+			name: "non-leap February",
+			from: time.Date(2026, time.January, 31, 20, 10, 0, 0, time.UTC),
+			want: time.Date(2026, time.February, 28, 20, 10, 0, 0, time.UTC),
+		},
+		{
+			name: "leap February",
+			from: time.Date(2028, time.January, 31, 20, 10, 0, 0, time.UTC),
+			want: time.Date(2028, time.February, 29, 20, 10, 0, 0, time.UTC),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, nextNaturalMonth(tt.from))
+		})
+	}
+}
+
+func TestInitialAgentReportUpdates(t *testing.T) {
+	now := time.Date(2026, time.January, 31, 20, 10, 0, 0, time.UTC)
+	configured := time.Date(2027, time.June, 1, 0, 0, 0, 0, time.UTC)
+	reported := now.Add(-time.Hour)
+
+	updates := initialAgentReportUpdates(models.Client{}, now)
+	assert.Equal(t, now, updates["first_agent_reported_at"])
+	assert.Equal(t, time.Date(2026, time.February, 28, 20, 10, 0, 0, time.UTC), updates["expired_at"])
+
+	updates = initialAgentReportUpdates(models.Client{ExpiredAt: &configured}, now)
+	assert.Equal(t, now, updates["first_agent_reported_at"])
+	_, hasExpiration := updates["expired_at"]
+	assert.False(t, hasExpiration)
+
+	updates = initialAgentReportUpdates(models.Client{FirstAgentReportedAt: &reported}, now)
+	assert.Empty(t, updates)
+}
+
 func TestSaveClientKeepsExistingTrafficLimitTypeWhenOmitted(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:keep-existing-traffic-type?mode=memory&cache=shared"), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),

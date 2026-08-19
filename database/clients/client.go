@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func DeleteClient(clientUuid string) error {
@@ -201,7 +202,14 @@ func deleteLegacyClientRows(tx *gorm.DB, clientUUID string) error {
 }
 
 func SaveClientInfo(update map[string]interface{}) error {
-	db := dbcore.GetDBInstance()
+	return saveClientInfo(dbcore.GetDBInstance(), update)
+}
+
+func saveClientInfo(db *gorm.DB, update map[string]interface{}) error {
+	return saveClientInfoAt(db, update, time.Now().UTC())
+}
+
+func saveClientInfoAt(db *gorm.DB, update map[string]interface{}, now time.Time) error {
 	clientUUID, ok := update["uuid"].(string)
 	if !ok || clientUUID == "" {
 		return fmt.Errorf("invalid client UUID")
@@ -212,7 +220,8 @@ func SaveClientInfo(update map[string]interface{}) error {
 		return fmt.Errorf("no fields to update")
 	}
 
-	update["updated_at"] = time.Now().UTC()
+	now = now.UTC()
+	update["updated_at"] = now
 
 	toFloat64 := func(value interface{}) (float64, bool) {
 		switch typed := value.(type) {
@@ -290,11 +299,50 @@ func SaveClientInfo(update map[string]interface{}) error {
 		return err
 	}
 
-	err := db.Model(&models.Client{}).Where("uuid = ?", clientUUID).Updates(update).Error
-	if err != nil {
-		return err
+	return db.Transaction(func(tx *gorm.DB) error {
+		var client models.Client
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("expired_at", "first_agent_reported_at").
+			Where("uuid = ?", clientUUID).
+			First(&client).Error; err != nil {
+			return err
+		}
+
+		for key, value := range initialAgentReportUpdates(client, now) {
+			update[key] = value
+		}
+
+		return tx.Model(&models.Client{}).Where("uuid = ?", clientUUID).Updates(update).Error
+	})
+}
+
+func initialAgentReportUpdates(client models.Client, now time.Time) map[string]interface{} {
+	if client.FirstAgentReportedAt != nil {
+		return nil
 	}
-	return nil
+	updates := map[string]interface{}{"first_agent_reported_at": now}
+	if client.ExpiredAt == nil {
+		updates["expired_at"] = nextNaturalMonth(now)
+	}
+	return updates
+}
+
+func nextNaturalMonth(value time.Time) time.Time {
+	firstOfNextMonth := time.Date(
+		value.Year(), value.Month()+1, 1,
+		value.Hour(), value.Minute(), value.Second(), value.Nanosecond(),
+		value.Location(),
+	)
+	lastOfNextMonth := firstOfNextMonth.AddDate(0, 1, -1).Day()
+	day := value.Day()
+	if day > lastOfNextMonth {
+		day = lastOfNextMonth
+	}
+	return time.Date(
+		firstOfNextMonth.Year(), firstOfNextMonth.Month(), day,
+		value.Hour(), value.Minute(), value.Second(), value.Nanosecond(),
+		value.Location(),
+	)
 }
 
 // CreateClient 创建新客户端

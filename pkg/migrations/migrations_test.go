@@ -68,6 +68,40 @@ func TestMigrateTrafficResetDayFromTags(t *testing.T) {
 	}
 }
 
+func TestBackfillFirstAgentReportedAt(t *testing.T) {
+	db := openTestDB(t, "migrations_first_agent_reported_at")
+	if err := db.AutoMigrate(&models.Client{}); err != nil {
+		t.Fatalf("migrate client table: %v", err)
+	}
+	createdAt := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC)
+	reportedAt := time.Date(2026, time.August, 2, 12, 0, 0, 0, time.UTC)
+	if err := db.Create([]models.Client{
+		{UUID: "existing", Token: "token-existing", CreatedAt: createdAt},
+		{UUID: "reported", Token: "token-reported", CreatedAt: createdAt, FirstAgentReportedAt: &reportedAt},
+	}).Error; err != nil {
+		t.Fatalf("seed clients: %v", err)
+	}
+
+	if err := BackfillFirstAgentReportedAt(db); err != nil {
+		t.Fatalf("backfill first agent report times: %v", err)
+	}
+
+	var existing models.Client
+	if err := db.First(&existing, "uuid = ?", "existing").Error; err != nil {
+		t.Fatalf("load existing client: %v", err)
+	}
+	if existing.FirstAgentReportedAt == nil || !existing.FirstAgentReportedAt.UTC().Equal(createdAt) {
+		t.Fatalf("existing first report time = %v, want %v", existing.FirstAgentReportedAt, createdAt)
+	}
+	var reported models.Client
+	if err := db.First(&reported, "uuid = ?", "reported").Error; err != nil {
+		t.Fatalf("load reported client: %v", err)
+	}
+	if reported.FirstAgentReportedAt == nil || !reported.FirstAgentReportedAt.UTC().Equal(reportedAt) {
+		t.Fatalf("reported first report time = %v, want %v", reported.FirstAgentReportedAt, reportedAt)
+	}
+}
+
 func TestHasLegacyConfigTable(t *testing.T) {
 	t.Run("config item table", func(t *testing.T) {
 		db := openTestDB(t, "migrations_config_item")
