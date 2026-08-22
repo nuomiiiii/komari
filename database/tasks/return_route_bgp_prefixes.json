@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-22T20:37:58.771496Z",
+  "generated_at": "2026-08-22T22:36:53.006138Z",
   "source": "bgp.tools/table.jsonl + maintained overrides",
   "prefix_groups": {
     "cmin2": [
