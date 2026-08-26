@@ -103,7 +103,7 @@ func PrepareAndLaunch(ctx context.Context, version, versionHash string) (*Update
 	}()
 	candidate := filepath.Join(jobRoot, "komari-candidate")
 	client := updateHTTPClient()
-	manifest, err := fetchManifest(releaseURL(version, manifestName), client)
+	manifest, err := fetchReleaseManifest(version, client)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func PrepareAndLaunch(ctx context.Context, version, versionHash string) (*Update
 		return nil, err
 	}
 
-	output, err := scheduleUpdateHelper(ctx, jobID, candidate, configPath, runCombinedOutput)
+	output, err := scheduleUpdateHelper(ctx, jobID, executable, configPath, runCombinedOutput)
 	if err != nil {
 		result.Status = "failed"
 		result.Message = strings.TrimSpace(string(output))
@@ -170,11 +170,11 @@ func runCombinedOutput(ctx context.Context, name string, arguments ...string) ([
 	return exec.CommandContext(ctx, name, arguments...).CombinedOutput()
 }
 
-func scheduleUpdateHelper(ctx context.Context, jobID, candidate, configPath string, run commandRunner) ([]byte, error) {
+func scheduleUpdateHelper(ctx context.Context, jobID, helperBinary, configPath string, run commandRunner) ([]byte, error) {
 	arguments := []string{
 		"--unit=komari-self-update-" + jobID,
 		"--no-block",
-		candidate, "_self-update-helper", configPath,
+		helperBinary, "_self-update-helper", configPath,
 	}
 	noBlockEnabled := true
 	for {

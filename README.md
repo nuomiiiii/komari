@@ -11,7 +11,7 @@ Komari Lite 是一款轻量、自托管的服务器监控与运维管理工具�
 
 本项目基于 [komari-monitor/komari](https://github.com/komari-monitor/komari) 持续开发，重点改善低配置主控上的数据库占用、历史查询和维护负载，同时补充更完整的流量管理、备份迁移、接入安全与双端后台体验。
 
-**当前正式版：[`2.2.3`](https://github.com/nuomiiiii/komari/releases/tag/2.2.3)**
+**当前正式版：[`2.2.4`](https://github.com/nuomiiiii/komari/releases/tag/2.2.4)**
 
 > [!IMPORTANT]
 > 从 `2.2.1` 开始，系统 Web UI 与公开大屏主题已经解耦：Komari Lite Web 只负责管理后台、远程终端等系统页面，主题只影响公开大屏。默认集成的 Nezha 主题可独立更新，并可在已有其他可用主题时删除；主题管理始终要求至少保留一个可用主题。原经典主题已拆分为独立的 [komari-Classic](https://github.com/nuomiiiii/komari-Classic)，不再随 Komari Lite 内置。
@@ -20,6 +20,10 @@ Komari Lite 是一款轻量、自托管的服务器监控与运维管理工具�
 
 > [!WARNING]
 > Komari Lite 只能部署在你拥有或已获得授权管理的设备上。请勿将其用于未经授权的访问、持久化、命令执行或其他滥用行为。管理员应启用 HTTPS 与双因素认证，并妥善保护 Agent Token 和备份文件。
+
+## 2.2.4 稳定版能力摘要
+
+- **可原地升级到 Lite**：Linux 直装后台的检查更新和一键更新改为跟踪 Lite 正式版；升级后继续使用当前监听地址和 `komari.service`。节点一键安装仍使用 Komari Agent。
 
 ## 2.2.3 稳定版能力摘要
 
@@ -74,7 +78,7 @@ docker run -d \
   ghcr.io/nuomiiiii/komari:latest
 ```
 
-固定使用当前正式版时，将镜像标签改为 `ghcr.io/nuomiiiii/komari:2.2.3`。
+固定使用当前正式版时，将镜像标签改为 `ghcr.io/nuomiiiii/komari:2.2.4`。
 
 更新 Docker 部署前请先备份 `data` 目录，然后拉取新镜像并使用原来的端口和数据挂载重新创建容器：
 
@@ -132,7 +136,7 @@ SQLite 指标库使用紧凑的无损编码和分层保留。压缩不会额外�
 
 ## Linux 一键更新与回退
 
-一键更新只面向官方脚本安装、由 systemd 管理且满足运行时检查的 Linux 实例。更新程序会校验版本、构建标识、大小和 SHA-256，备份当前程序及 `data`，并在新进程健康检查失败时恢复旧版本。
+一键更新只面向官方脚本安装、由 systemd 管理且满足运行时检查的 Linux 实例。从 `2.2.4` 起，检查更新和一键更新跟踪 Lite 正式版，可原地升到 Lite。更新程序会校验版本、构建标识、大小和 SHA-256，备份当前程序及 `data`，并在新进程健康检查失败时恢复旧版本。
 
 Docker、Windows、非 systemd 环境、外置指标数据库和不满足原子回退条件的部署不会启用该入口。详细限制见 [Linux 一键更新与回退](docs/self-update.md)。
 

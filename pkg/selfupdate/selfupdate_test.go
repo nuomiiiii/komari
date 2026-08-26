@@ -2,7 +2,10 @@ package selfupdate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,6 +43,9 @@ func TestScheduleUpdateHelperFallsBackWithoutNoBlock(t *testing.T) {
 	}
 	if containsArgument(calls[1], "--no-block") {
 		t.Fatal("compatible systemd-run retry still used --no-block")
+	}
+	if !containsArgument(calls[0], "/tmp/candidate") || !containsArgument(calls[0], "_self-update-helper") {
+		t.Fatalf("helper invocation missing current binary or helper command: %v", calls[0])
 	}
 }
 
@@ -97,6 +103,101 @@ func TestManifestSelectsCurrentPlatformAndValidatesChecksum(t *testing.T) {
 	}
 	if _, err := manifest.validate("2.0.5", "AB12CD3"); err == nil {
 		t.Fatal("manifest accepted a case-mismatched build identifier")
+	}
+}
+
+func TestManifestPrefersLiteAssetName(t *testing.T) {
+	liteName := "Lite-" + runtime.GOOS + "-" + runtime.GOARCH
+	komariName := "komari-" + runtime.GOOS + "-" + runtime.GOARCH
+	manifest := Manifest{
+		Schema:      1,
+		Version:     "2.3.0",
+		VersionHash: "c0ffeee",
+		Assets: []ManifestAsset{
+			{
+				Name:   komariName,
+				OS:     runtime.GOOS,
+				Arch:   runtime.GOARCH,
+				Size:   11,
+				SHA256: strings.Repeat("b", 64),
+			},
+			{
+				Name:   liteName,
+				OS:     runtime.GOOS,
+				Arch:   runtime.GOARCH,
+				Size:   42,
+				SHA256: strings.Repeat("a", 64),
+			},
+		},
+	}
+	asset, err := manifest.validate("2.3.0", "c0ffeee")
+	if err != nil {
+		t.Fatalf("validate() error = %v", err)
+	}
+	if asset.Name != liteName {
+		t.Fatalf("asset name = %q, want %q", asset.Name, liteName)
+	}
+}
+
+func TestFetchReleaseManifestPrefersLiteThenKomari(t *testing.T) {
+	previous := releaseBaseURL
+	t.Cleanup(func() { releaseBaseURL = previous })
+
+	liteBody, err := json.Marshal(Manifest{Schema: 1, Version: "2.3.0", VersionHash: "abc1234"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyBody, err := json.Marshal(Manifest{Schema: 1, Version: "2.2.4", VersionHash: "def5678"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/"+manifestName):
+			writer.Write(liteBody)
+		case strings.HasSuffix(request.URL.Path, "/"+legacyManifestName):
+			writer.Write(legacyBody)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	releaseBaseURL = server.URL
+
+	got, err := fetchReleaseManifest("2.3.0", server.Client())
+	if err != nil {
+		t.Fatalf("fetchReleaseManifest() error = %v", err)
+	}
+	if got.Version != "2.3.0" || got.VersionHash != "abc1234" {
+		t.Fatalf("preferred manifest = %#v", got)
+	}
+}
+
+func TestFetchReleaseManifestFallsBackToKomariFile(t *testing.T) {
+	previous := releaseBaseURL
+	t.Cleanup(func() { releaseBaseURL = previous })
+
+	legacyBody, err := json.Marshal(Manifest{Schema: 1, Version: "2.2.3", VersionHash: "oldhash"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.HasSuffix(request.URL.Path, "/"+legacyManifestName) {
+			writer.Write(legacyBody)
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	t.Cleanup(server.Close)
+	releaseBaseURL = server.URL
+
+	got, err := fetchReleaseManifest("2.2.3", server.Client())
+	if err != nil {
+		t.Fatalf("fetchReleaseManifest() error = %v", err)
+	}
+	if got.Version != "2.2.3" || got.VersionHash != "oldhash" {
+		t.Fatalf("legacy manifest = %#v", got)
 	}
 }
 

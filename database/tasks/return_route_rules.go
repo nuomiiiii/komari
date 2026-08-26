@@ -25,7 +25,7 @@ const (
 	returnRouteRuleSchemaVersion      = 1
 	returnRouteRuleExternalPath       = "./data/return-route-signatures.json"
 	returnRouteBGPExternalPath        = "./data/return-route-bgp-prefixes.json"
-	returnRouteBGPDefaultURL          = "https://raw.githubusercontent.com/nuomiiiii/komari/main/database/tasks/return_route_bgp_prefixes.json"
+	returnRouteBGPDefaultURL          = "https://raw.githubusercontent.com/nuomiiiii/lite/main/database/tasks/return_route_bgp_prefixes.json"
 	returnRouteRulePollInterval       = 2 * time.Second
 	returnRouteBGPRefreshInterval     = 2 * time.Hour
 	returnRouteRuleMaxSize            = 2 << 20

@@ -13,9 +13,9 @@ Linux 一键更新面向使用官方安装脚本、由 systemd 管理的直接�
 
 ## 更新事务
 
-1. 从 `nuomiiiii/komari` 的 GitHub Release 下载当前 CPU 架构的文件。
-2. 使用 `komari-update.json` 校验版本号、七位构建标识、文件大小和 SHA-256。
-3. 由独立的 systemd 更新助手停止 Komari。
+1. 从 `nuomiiiii/Lite` 的 GitHub Release 下载当前 CPU 架构的文件；优先 `lite-update.json` 和 `Lite-*`，没有时再读旧的 `komari-update.json` / `komari-*`。
+2. 使用更新清单校验版本号、七位构建标识、文件大小和 SHA-256。
+3. 由当前 Komari 进程拉起的 systemd 更新助手停止服务。探活用当前监听地址，不写死端口。
 4. 冷备份当前程序和完整 `data` 目录。
 5. 原子替换程序并重新启动服务。
 6. 持续检查版本接口；新服务稳定运行后才确认成功。
